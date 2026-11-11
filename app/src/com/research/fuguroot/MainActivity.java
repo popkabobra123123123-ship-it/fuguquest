@@ -7,6 +7,9 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import java.io.FilterInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 
 /**
  * On-device front-end for the DirtyFrag chain: adb-wireless self-connect + `fuguquest --local`.
@@ -15,7 +18,9 @@ import android.widget.TextView;
  * refuted; this app drives option #1, the validated shell-domain chain, from the headset:
  *
  *   tap ROOT  -> mini adb client connects to 127.0.0.1:5555 (needs "ADB over network" on)
- *             -> unpacks fuguquest + targets/ from THIS apk into /data/local/tmp/fugu-root
+ *             -> streams the bundled fugu.tar.gz (fuguquest arm64 + targets/) from THIS apk
+ *                over the adb shell stdin (`tar xzf -`; Android's toybox has no unzip)
+ *                into /data/local/tmp/fugu-root
  *             -> runs `fuguquest --local -t auto --adb-root`, output streamed below.
  *
  * Prereq: developer options -> ADB over network (once). On the first connect the headset
@@ -63,6 +68,21 @@ public class MainActivity extends Activity {
         new Thread(() -> flow(what)).start();
     }
 
+    /** asset stream that reports progress every MB */
+    private InputStream counted(InputStream in) {
+        return new FilterInputStream(in) {
+            long n;
+            @Override public int read(byte[] b, int off, int len) throws IOException {
+                int r = super.read(b, off, len);
+                if (r > 0) {
+                    n += r;
+                    if (n / (1024 * 1024) > (n - r) / (1024 * 1024)) logLine("* push " + (n / (1024 * 1024)) + " MB\n");
+                }
+                return r;
+            }
+        };
+    }
+
     private void flow(String what) {
         AdbShell adb = null;
         try {
@@ -74,13 +94,12 @@ public class MainActivity extends Activity {
                         + "getprop ro.build.version.security_patch 2>&1", l -> logLine(l));
                 return;
             }
-            String apk = getPackageCodePath();
-            logLine("\n$ deploy from " + apk + "\n");
-            String cmd = "cd /data/local/tmp && rm -rf fugu-root && mkdir fugu-root && cd fugu-root"
-                    + " && unzip -q -o \"" + apk + "\" 'assets/fugu/*'"
-                    + " && cd assets/fugu && chmod 755 fuguquest"
-                    + " && ./fuguquest --local -t auto --adb-root 2>&1";
-            adb.shell(cmd, l -> logLine(l));
+            logLine("\n$ deploy: tar xzf - (from this apk, via adb stdin)\n");
+            adb.shellIn("cd /data/local/tmp && rm -rf fugu-root && mkdir fugu-root && cd fugu-root && tar xzf - 2>&1",
+                    counted(getAssets().open("fugu.tar.gz")), l -> logLine(l));
+            logLine("\n$ chain\n");
+            adb.shell("cd /data/local/tmp/fugu-root/fugu && chmod 755 fuguquest && ls -l fuguquest"
+                    + " && ./fuguquest --local -t auto --adb-root 2>&1", l -> logLine(l));
             logLine("\n== цепочка завершилась — проверь кнопкой id ==\n");
         } catch (final Throwable t) {
             logLine("\n[!] " + t + "\n"

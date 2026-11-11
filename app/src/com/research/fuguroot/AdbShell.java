@@ -28,9 +28,9 @@ import java.util.zip.CRC32;
  *
  * Implements the classic v1 protocol: CNXN handshake, legacy RSA AUTH (SHA1withRSA token
  * signature + android_pubkey-format public key — on first use the headset shows the usual
- * "Allow USB debugging?" RSA confirmation), and the `shell:` service with live output
- * streaming. That is all the front-end needs: it unpacks fuguquest + targets/ from its
- * own APK into /data/local/tmp and then drives `fuguquest --local`.
+ * "Allow USB debugging?" RSA confirmation), the `shell:` service with live output
+ * streaming, and stdin streaming into a shell (deploy: `tar xzf -`). Android's toybox has
+ * no unzip, so the app pushes its bundled fugu tarball through the adb shell stdin.
  *
  * Plain socket on purpose: the classic tcpip adbd on port 5555 is unencrypted. The TLS /
  * SPAKE2 wireless-debugging pairing flow is intentionally out of scope.
@@ -107,6 +107,21 @@ public class AdbShell {
         }
     }
 
+    /** line-oriented buffering of a raw output stream (shared by shell()/shellIn()) */
+    private static final class LineBuf {
+        final StringBuilder sb = new StringBuilder();
+        void feed(byte[] d, Sink sink) {
+            if (d.length == 0) return;
+            sb.append(new String(d, 0, d.length));
+            int nl;
+            while ((nl = sb.indexOf("\n")) >= 0) {
+                sink.onOut(sb.substring(0, nl + 1));
+                sb.delete(0, nl + 1);
+            }
+        }
+        void flush(Sink sink) { if (sb.length() > 0) sink.onOut(sb.toString()); }
+    }
+
     // ------------------------------------------------------------------ session
 
     /** Connect (with the legacy RSA AUTH exchange) to a classic tcpip adbd. */
@@ -144,28 +159,63 @@ public class AdbShell {
     public void shell(String cmd, Sink sink) throws IOException {
         final int local = 1;
         send(OPEN, local, 0, ("shell:" + cmd + "\0").getBytes("US-ASCII"));
+        LineBuf buf = new LineBuf();
         int remote = -1;
-        StringBuilder buf = new StringBuilder();
         while (true) {
             Msg m = read();
             if (m.cmd == OKAY) { remote = m.a0; continue; }
             if (m.cmd == WRTE) {
                 if (remote < 0) remote = m.a0;
-                if (m.data.length > 0) {
-                    buf.append(new String(m.data, 0, m.data.length));
-                    int nl;
-                    while ((nl = buf.indexOf("\n")) >= 0) {
-                        sink.onOut(buf.substring(0, nl + 1));
-                        buf.delete(0, nl + 1);
-                    }
-                }
+                buf.feed(m.data, sink);
                 send(OKAY, local, remote, null); // flow-control ack for every WRTE
                 continue;
             }
             if (m.cmd == CLSE) break;
             throw new IOException("adb: unexpected packet 0x" + Integer.toHexString(m.cmd));
         }
-        if (buf.length() > 0) sink.onOut(buf.toString());
+        buf.flush(sink);
+    }
+
+    /**
+     * Open `shell:<setupCmd>`, stream `data` into its stdin (chunked WRTE, one OKAY ack
+     * each — the v1 flow-control window), then CLSE for EOF; drains remaining output.
+     * Used for the deploy: `... && tar xzf -` with the bundled tarball on stdin.
+     */
+    public void shellIn(String setupCmd, InputStream data, Sink sink) throws IOException {
+        final int local = 2;
+        send(OPEN, local, 0, ("shell:" + setupCmd + "\0").getBytes("US-ASCII"));
+        LineBuf buf = new LineBuf();
+        int remote = -1;
+        // wait for the OPEN acceptance (OKAY carries the remote stream id)
+        while (remote < 0) {
+            Msg m = read();
+            if (m.cmd == OKAY) remote = m.a0;
+            else if (m.cmd == WRTE) { remote = m.a0; buf.feed(m.data, sink); send(OKAY, local, remote, null); }
+            else if (m.cmd == CLSE) throw new EOFException("adb: stream closed before push");
+            else throw new IOException("adb: unexpected packet 0x" + Integer.toHexString(m.cmd));
+        }
+        byte[] b = new byte[4096];
+        for (int n; (n = data.read(b)) > 0; ) {
+            byte[] chunk = new byte[n];
+            System.arraycopy(b, 0, chunk, 0, n);
+            send(WRTE, local, remote, chunk);
+            while (true) { // wait for the ack (server output may interleave: log + ack it)
+                Msg m = read();
+                if (m.cmd == OKAY) break;
+                if (m.cmd == WRTE) { buf.feed(m.data, sink); send(OKAY, local, remote, null); continue; }
+                if (m.cmd == CLSE) throw new EOFException("adb: stream closed during push");
+                throw new IOException("adb: unexpected packet 0x" + Integer.toHexString(m.cmd));
+            }
+        }
+        send(CLSE, local, remote, null); // EOF on the shell's stdin
+        while (true) { // drain whatever the command prints before it exits
+            Msg m = read();
+            if (m.cmd == CLSE) break;
+            if (m.cmd == WRTE) { buf.feed(m.data, sink); send(OKAY, local, remote, null); continue; }
+            if (m.cmd == OKAY) continue;
+            throw new IOException("adb: unexpected packet 0x" + Integer.toHexString(m.cmd));
+        }
+        buf.flush(sink);
     }
 
     public void close() {

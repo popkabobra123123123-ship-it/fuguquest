@@ -66,6 +66,10 @@ echo "[bin] $FUGU"
 rm -rf "$OUT"; mkdir -p "$OUT/classes" "$OUT/stage/assets/fugu"
 cp "$FUGU" "$OUT/stage/assets/fugu/fuguquest"
 cp -r "$ROOT/targets/." "$OUT/stage/assets/fugu/targets/"
+# Single tarball asset: the app streams it over the adb shell stdin and extracts with
+# `tar xzf -` — Android's toybox ships tar (with zlib) but NO unzip.
+( cd "$OUT/stage/assets" && tar czf fugu.tar.gz fugu )
+rm -rf "$OUT/stage/assets/fugu"
 
 echo "[1/5] aapt2 link"
 "$BT/aapt2" link -I "$PLATFORM" --manifest "$HERE/AndroidManifest.xml" \

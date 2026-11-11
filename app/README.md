@@ -15,8 +15,9 @@ adb-wireless self-connect").
 2. Install the APK, open it, tap **ROOT**.
 3. First connect only: the headset shows the usual **"Allow USB debugging?"** RSA
    confirmation (the app keeps its own persistent key in `filesDir`). Tap Allow.
-4. The app unpacks `fuguquest` (arm64) + `targets/` from **its own APK** into
-   `/data/local/tmp/fugu-root` (via `unzip`, as the shell user) and runs
+4. The app streams a bundled `fugu.tar.gz` (arm64 `fuguquest` + `targets/`) from **its own
+   APK** through the adb shell stdin (`tar xzf -` — Android's toybox has no unzip) into
+   `/data/local/tmp/fugu-root` and runs
 
    ```
    fuguquest --local -t auto --adb-root
