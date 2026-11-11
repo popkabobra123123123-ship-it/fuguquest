@@ -12,3 +12,6 @@ fuguquest.zip
 
 # native agent build output
 agent/target/
+
+# app APK build output
+app/build/

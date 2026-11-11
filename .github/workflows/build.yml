@@ -23,3 +23,31 @@ jobs:
           name: fuguquest-linux
           path: rust/target/release/fuguquest
           if-no-files-found: error
+
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: android-actions/setup-android@v3
+
+      - name: NDK
+        run: sdkmanager --install "ndk;26.1.10909125" >/dev/null
+
+      - name: Build fugu-root.apk
+        run: NDK="$ANDROID_HOME/ndk/26.1.10909125" bash app/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fugu-root-apk
+          path: app/build/fugu-root.apk
+          if-no-files-found: error
