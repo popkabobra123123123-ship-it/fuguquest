@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- On-device front-end for the DirtyFrag chain: adb-wireless self-connect + `fuguquest --local`.
-     Upstream's no-adb app-chain (option #2, deleted in d89bfeb) was refuted by zygote preload;
-     this drives option #1 (the validated shell-domain chain) entirely from the headset.
-     Only INTERNET: one loopback TCP connection to adbd (127.0.0.1:5555). -->
+<!-- On-device front-end for the DirtyFrag chain: adb-wireless self-connect to the
+     local adbd, driving fuguquest in local mode (shell domain, on the headset itself).
+     Upstream's no-adb app-chain (option 2, deleted in d89bfeb) was refuted by zygote
+     preload; this drives option 1, the validated shell-domain chain, entirely from the
+     headset. Only INTERNET: one loopback TCP connection to adbd (127.0.0.1:5555). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.research.fuguroot">
     <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="33" />

@@ -45,7 +45,11 @@ jobs:
         continue-on-error: true
         run: |
           docker run --platform linux/arm64 --rm -v "$PWD:/src" -w /src/rust alpine:latest \
-            sh -c "apk add -q cargo gcc musl-dev && cargo build --release --target aarch64-unknown-linux-musl"
+            sh -c "apk add -q cargo gcc musl-dev file \
+              && RUSTFLAGS='-C target-feature=+crt-static' cargo build --release \
+              && file target/release/fuguquest | grep -q static || exit 1 \
+              && mkdir -p target/aarch64-unknown-linux-musl/release \
+              && cp target/release/fuguquest target/aarch64-unknown-linux-musl/release/"
 
       - name: Build fugu-root.apk
         run: bash app/build.sh
