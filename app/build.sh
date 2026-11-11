@@ -53,7 +53,9 @@ fugu_arm64() {
     fi
     local m="$ROOT/rust/target/aarch64-unknown-linux-musl/release/fuguquest"
     [ -f "$m" ] && { echo "$m"; return; }
-    echo "no arm64 fuguquest: set NDK=, or prebuild one (aarch64-linux-android or static musl)" >&2
+    local p="$HERE/prebuilt/fuguquest-arm64-musl"
+    [ -f "$p" ] && { echo "$p"; return; }
+    echo "no arm64 fuguquest: set NDK=, prebuild one, or keep app/prebuilt/" >&2
     exit 1
 }
 

@@ -36,8 +36,13 @@ jobs:
 
       # arm64 fuguquest as a static musl binary — native build inside an arm64 Alpine
       # container (qemu-emulated on the x86_64 runner; the crate is zero-dep, so this
-      # needs no NDK and no cross toolchain).
+      # needs no NDK and no cross toolchain). If emulation is unavailable on the runner,
+      # app/build.sh falls back to the committed app/prebuilt/ binary.
+      - name: qemu binfmt for arm64
+        run: docker run --privileged tonistiigi/binfmt --install arm64
+
       - name: arm64 fuguquest (static musl)
+        continue-on-error: true
         run: |
           docker run --platform linux/arm64 --rm -v "$PWD:/src" -w /src/rust alpine:latest \
             sh -c "apk add -q cargo gcc musl-dev && cargo build --release --target aarch64-unknown-linux-musl"
