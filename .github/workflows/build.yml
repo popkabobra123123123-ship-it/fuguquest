@@ -34,17 +34,16 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android
-
-      - uses: android-actions/setup-android@v3
-
-      - name: NDK
-        run: sdkmanager --install "ndk;26.1.10909125" >/dev/null
+      # arm64 fuguquest as a static musl binary — native build inside an arm64 Alpine
+      # container (qemu-emulated on the x86_64 runner; the crate is zero-dep, so this
+      # needs no NDK and no cross toolchain).
+      - name: arm64 fuguquest (static musl)
+        run: |
+          docker run --platform linux/arm64 --rm -v "$PWD:/src" -w /src/rust alpine:latest \
+            sh -c "apk add -q cargo gcc musl-dev && cargo build --release --target aarch64-unknown-linux-musl"
 
       - name: Build fugu-root.apk
-        run: NDK="$ANDROID_HOME/ndk/26.1.10909125" bash app/build.sh
+        run: bash app/build.sh
 
       - uses: actions/upload-artifact@v4
         with:
